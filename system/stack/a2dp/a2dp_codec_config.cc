@@ -23,6 +23,7 @@
 #include <bluetooth/log.h>
 #include <com_android_bluetooth_flags.h>
 #include <stdio.h>
+#include <strings.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -683,9 +684,19 @@ bool A2dpCodecs::init() {
     // BTM_SPLIT_A2DP_SOURCE_* in btm_vendor_types.h) and PAL has no software encoder to fall
     // back on, so once LHDCv5 is negotiated configure_a2dp_encoder_format() rejects it and
     // every pal_stream_start() fails with -EINVAL, taking all playback down with it.
+    // This is a Qualcomm/PAL limitation only: on other SoCs (e.g. MediaTek) LHDCv5 is encoded
+    // in software through A2DP_SOFTWARE_ENCODING_DATAPATH, exactly like LDAC/aptX, so keep it.
+    // persist.bluetooth.lhdcv5.enabled overrides the SoC default in either direction.
     if (codec_index == BTAV_A2DP_CODEC_INDEX_SOURCE_LHDCV5) {
-      codec_priority = BTAV_A2DP_CODEC_PRIORITY_DISABLED;
-      log::info("LHDCv5 codec disabled");
+      char soc_manufacturer[PROPERTY_VALUE_MAX] = {0};
+      osi_property_get("ro.soc.manufacturer", soc_manufacturer, "");
+      const bool is_qualcomm = (strcasecmp(soc_manufacturer, "Qualcomm") == 0);
+      if (!osi_property_get_bool("persist.bluetooth.lhdcv5.enabled", !is_qualcomm)) {
+        codec_priority = BTAV_A2DP_CODEC_PRIORITY_DISABLED;
+        log::info("LHDCv5 codec disabled (soc_manufacturer={})", soc_manufacturer);
+      } else {
+        log::info("LHDCv5 codec enabled (soc_manufacturer={})", soc_manufacturer);
+      }
     }
 
     A2dpCodecConfig* codec_config = A2dpCodecConfig::createCodec(codec_index, codec_priority);
